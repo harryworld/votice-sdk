@@ -30,6 +30,7 @@ final class SuggestionDetailViewModel: ObservableObject {
     private let pageSize = 20
     private let commentUseCase: CommentUseCaseProtocol
     private let suggestionUseCase: SuggestionUseCaseProtocol
+    private let nicknameManager: NicknameManagerProtocol
 
     var isCommentFormValid: Bool {
         !newComment.isEmpty
@@ -40,10 +41,15 @@ final class SuggestionDetailViewModel: ObservableObject {
 
     // MARK: - Init
 
-    init(commentUseCase: CommentUseCaseProtocol = CommentUseCase(),
-         suggestionUseCase: SuggestionUseCaseProtocol = SuggestionUseCase()) {
+    init(
+        commentUseCase: CommentUseCaseProtocol = CommentUseCase(),
+        suggestionUseCase: SuggestionUseCaseProtocol = SuggestionUseCase(),
+        nicknameManager: NicknameManagerProtocol = NicknameManager()
+    ) {
         self.commentUseCase = commentUseCase
         self.suggestionUseCase = suggestionUseCase
+        self.nicknameManager = nicknameManager
+        commentNickname = nicknameManager.loadNickname()
     }
 
     // MARK: - Functions
@@ -141,6 +147,7 @@ final class SuggestionDetailViewModel: ObservableObject {
                 nickname: nickname
             )
 
+            persistNicknameIfNeeded(nickname)
             comments.append(response.comment)
 
             suggestionEntity?.commentCount = (suggestionEntity?.commentCount ?? 0) + 1
@@ -206,7 +213,9 @@ final class SuggestionDetailViewModel: ObservableObject {
     }
 
     func submitComment(for suggestionId: String, onSuccess: @escaping () -> Void) async {
-        await addComment(to: suggestionId, text: newComment, nickname: commentNickname.isEmpty ? nil : commentNickname)
+        let normalizedNickname = normalizedNickname(from: commentNickname)
+
+        await addComment(to: suggestionId, text: newComment, nickname: normalizedNickname)
 
         if !isShowingAlert {
             resetCommentForm()
@@ -217,7 +226,7 @@ final class SuggestionDetailViewModel: ObservableObject {
 
     func resetCommentForm() {
         newComment = ""
-        commentNickname = ""
+        commentNickname = nicknameManager.loadNickname()
     }
 
     func showDeleteCommentConfirmation(for comment: CommentEntity) {
@@ -250,6 +259,29 @@ final class SuggestionDetailViewModel: ObservableObject {
 // MARK: - Private
 
 private extension SuggestionDetailViewModel {
+    func normalizedNickname(from nickname: String) -> String? {
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedNickname.isEmpty else {
+            return nil
+        }
+
+        return trimmedNickname
+    }
+
+    func persistNicknameIfNeeded(_ nickname: String?) {
+        guard let nickname else {
+            return
+        }
+
+        do {
+            try nicknameManager.saveNickname(nickname)
+            commentNickname = nickname
+        } catch {
+            LogManager.shared.devLog(.error, "SuggestionDetailViewModel: failed to persist nickname: \(error)")
+        }
+    }
+
     func showAlert(_ alert: VoticeAlertEntity) {
         currentAlert = alert
 

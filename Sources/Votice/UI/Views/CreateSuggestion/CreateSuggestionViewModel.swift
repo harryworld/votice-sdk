@@ -28,6 +28,7 @@ final class CreateSuggestionViewModel: ObservableObject {
     @Published var issueImageData: Data?
 
     private let suggestionUseCase: SuggestionUseCaseProtocol
+    private let nicknameManager: NicknameManagerProtocol
 
     var liquidGlassEnabled: Bool {
         ConfigurationManager.shared.shouldUseLiquidGlass
@@ -38,8 +39,13 @@ final class CreateSuggestionViewModel: ObservableObject {
 
     // MARK: - Init
 
-    init(suggestionUseCase: SuggestionUseCaseProtocol = SuggestionUseCase()) {
+    init(
+        suggestionUseCase: SuggestionUseCaseProtocol = SuggestionUseCase(),
+        nicknameManager: NicknameManagerProtocol = NicknameManager()
+    ) {
         self.suggestionUseCase = suggestionUseCase
+        self.nicknameManager = nicknameManager
+        nickname = nicknameManager.loadNickname()
     }
 
     // MARK: - Functions
@@ -82,6 +88,8 @@ final class CreateSuggestionViewModel: ObservableObject {
             )
             let response = try await suggestionUseCase.createSuggestion(request: request)
 
+            persistNicknameIfNeeded(nickname)
+
             return response.suggestion
         } catch {
             LogManager.shared.devLog(.error, "CreateSuggestionViewModel: failed to create suggestion: \(error)")
@@ -100,10 +108,11 @@ final class CreateSuggestionViewModel: ObservableObject {
 
     func submitSuggestion(onSuccess: @escaping (SuggestionEntity) -> Void) async {
         do {
+            let normalizedNickname = normalizedNickname(from: nickname)
             let suggestion = try await createSuggestion(
                 title: title,
                 description: description,
-                nickname: nickname.isEmpty ? nil : nickname
+                nickname: normalizedNickname
             )
 
             onSuccess(suggestion)
@@ -115,7 +124,7 @@ final class CreateSuggestionViewModel: ObservableObject {
     func resetForm() {
         title = ""
         description = ""
-        nickname = ""
+        nickname = nicknameManager.loadNickname()
         isIssue = false
         issueImageData = nil
     }
@@ -124,6 +133,29 @@ final class CreateSuggestionViewModel: ObservableObject {
 // MARK: - Private
 
 private extension CreateSuggestionViewModel {
+    func normalizedNickname(from nickname: String) -> String? {
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedNickname.isEmpty else {
+            return nil
+        }
+
+        return trimmedNickname
+    }
+
+    func persistNicknameIfNeeded(_ nickname: String?) {
+        guard let nickname else {
+            return
+        }
+
+        do {
+            try nicknameManager.saveNickname(nickname)
+            self.nickname = nickname
+        } catch {
+            LogManager.shared.devLog(.error, "CreateSuggestionViewModel: failed to persist nickname: \(error)")
+        }
+    }
+
     func showAlert(_ alert: VoticeAlertEntity) {
         currentAlert = alert
 

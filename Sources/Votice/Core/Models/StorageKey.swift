@@ -10,4 +10,5 @@ import Foundation
 
 public enum StorageKey: String {
     case filterApplied
+    case nickname
 }
